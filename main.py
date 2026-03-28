@@ -239,6 +239,26 @@ Write the complete tutorial with real code."""
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/debug")
+async def debug():
+    from agents import call_gemini
+    result = await call_gemini(
+        "Respond ONLY with valid JSON, no markdown: {\"status\": \"ok\", \"msg\": \"groq working\"}",
+        "ping",
+        100
+    )
+    return {"groq_response": result, "groq_key_set": bool(os.getenv("GROQ_API_KEY"))}
+
+
+@app.post("/api/debug/full")
+async def debug_full():
+    from agents import planner_agent, stack_scout_agent
+    state = {"problem": "I want to build a simple todo app", "budget": 50, "log": [], "error": None}
+    s1 = await planner_agent(state)
+    s2 = await stack_scout_agent(s1)
+    return {"planner": s1.get("planner"), "stack_scout": s2.get("stack_scout"), "log": s2.get("log")}
+
+
 @app.post("/api/chat")
 async def chat(request: dict):
     from agents import call_gemini_text
