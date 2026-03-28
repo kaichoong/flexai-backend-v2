@@ -63,18 +63,18 @@ async def synthesise(state: FlexAIState) -> FlexAIState:
     tools_sourcer = state.get("tools_sourcer") or {}
 
     solutions = stack_scout.get("solutions", [])
-    tut_solutions = {s.get("title"): s for s in tutorial.get("solutions", [])}
-    budget_solutions = {s.get("title"): s for s in budget_bot.get("solutions", [])}
-    code_snippets = {s.get("title"): s for s in code_agent_out.get("snippets", [])}
-    tool_solutions = {s.get("title"): s for s in tools_sourcer.get("solutions", [])}
+    tut_solutions = tutorial.get("solutions", [])
+    budget_solutions = budget_bot.get("solutions", [])
+    code_snippets = code_agent_out.get("snippets", [])
+    tool_solutions = tools_sourcer.get("solutions", [])
 
     projects = []
-    for sol in solutions:
-        title = sol.get("title", "")
-        tut = tut_solutions.get(title, {})
-        budget = budget_solutions.get(title, {})
-        code = code_snippets.get(title, {})
-        tools = tool_solutions.get(title, {})
+    for i, sol in enumerate(solutions):
+        # Match by index — avoids title mismatch between agents
+        tut = tut_solutions[i] if i < len(tut_solutions) else {}
+        budget = budget_solutions[i] if i < len(budget_solutions) else {}
+        code = code_snippets[i] if i < len(code_snippets) else {}
+        tools = tool_solutions[i] if i < len(tool_solutions) else {}
 
         projects.append({
             "title": title,
