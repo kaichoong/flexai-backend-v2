@@ -62,18 +62,20 @@ async def stream_projects(request: ProjectRequest):
             initial_state = {
                 "problem": request.problem,
                 "budget": request.budget,
+                "orchestrator": None,
                 "planner": None,
                 "stack_scout": None,
                 "budget_bot": None,
                 "tutorial": None,
                 "code_agent": None,
                 "tools_sourcer": None,
+                "critic": None,
                 "video_agent": None,
                 "log": [],
                 "error": None,
             }
 
-            yield f"data: {json.dumps({'type': 'log', 'message': 'Connected — 7 agents starting…'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': 'Connected — Orchestrator + 7 agents starting…'})}\n\n"
             await asyncio.sleep(0.1)
 
             last_ping = asyncio.get_event_loop().time()
@@ -120,12 +122,14 @@ async def get_projects(request: ProjectRequest):
         initial_state = {
             "problem": request.problem,
             "budget": request.budget,
+            "orchestrator": None,
             "planner": None,
             "stack_scout": None,
             "budget_bot": None,
             "tutorial": None,
             "code_agent": None,
             "tools_sourcer": None,
+            "critic": None,
             "video_agent": None,
             "log": [],
             "error": None,
