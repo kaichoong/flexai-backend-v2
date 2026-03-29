@@ -30,6 +30,19 @@ app.add_middleware(
 class ProjectRequest(BaseModel):
     problem: str
     budget: int = 50
+    fingerprint: str = ""
+
+
+class SaveRunRequest(BaseModel):
+    fingerprint: str
+    problem: str
+    picked_title: str
+    picked_type: str
+    picked_stack: list[str] = []
+    difficulty: str = "intermediate"
+    budget: int = 50
+    problem_type: str = "software"
+    solution_count: int = 3
 
 
 class VideoScriptRequest(BaseModel):
@@ -62,6 +75,7 @@ async def stream_projects(request: ProjectRequest):
             initial_state = {
                 "problem": request.problem,
                 "budget": request.budget,
+                "fingerprint": request.fingerprint,
                 "orchestrator": None,
                 "planner": None,
                 "stack_scout": None,
@@ -122,6 +136,7 @@ async def get_projects(request: ProjectRequest):
         initial_state = {
             "problem": request.problem,
             "budget": request.budget,
+            "fingerprint": request.fingerprint,
             "orchestrator": None,
             "planner": None,
             "stack_scout": None,
@@ -261,6 +276,31 @@ async def debug_full():
     s1 = await planner_agent(state)
     s2 = await stack_scout_agent(s1)
     return {"planner": s1.get("planner"), "stack_scout": s2.get("stack_scout"), "log": s2.get("log")}
+
+
+@app.post("/api/memory/save")
+async def memory_save(request: SaveRunRequest):
+    from memory import save_run
+    success = await save_run(
+        fingerprint=request.fingerprint,
+        problem=request.problem,
+        picked_title=request.picked_title,
+        picked_type=request.picked_type,
+        picked_stack=request.picked_stack,
+        difficulty=request.difficulty,
+        budget=request.budget,
+        problem_type=request.problem_type,
+        solution_count=request.solution_count,
+    )
+    return {"saved": success}
+
+
+@app.get("/api/memory/{fingerprint}")
+async def memory_get(fingerprint: str):
+    from memory import get_user_history, get_user_preferences
+    history = await get_user_history(fingerprint)
+    prefs = get_user_preferences(history)
+    return {"history": history, "preferences": prefs}
 
 
 @app.post("/api/chat")
