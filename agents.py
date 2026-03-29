@@ -1,6 +1,7 @@
 """
 Flex AI — Agent definitions (Groq via OpenAI-compatible API)
 Using LLaMA 3.3 70B on Groq for fast, free inference.
+Phase 2: Critic agent with smart threshold-based retry.
 """
 
 import json
@@ -135,10 +136,11 @@ async def budget_bot_agent(state: dict) -> dict:
     return {**state, "budget_bot": result, "log": state.get("log",[]) + [f"💰 Budget Bot: {cost_summary}"]}
 
 
-async def tutorial_agent(state: dict) -> dict:
+async def tutorial_agent(state: dict, feedback: str = "") -> dict:
     planner = state.get("planner") or {}
     stack_scout = state.get("stack_scout") or {}
     solutions_detail = "\n".join([f"{i+1}. {s.get('title','')} — Stack: {', '.join(s.get('stack',[]))} — Difficulty: {s.get('difficulty','')}" for i,s in enumerate(stack_scout.get("solutions",[]))])
+    feedback_block = f"\n\nCRITIC FEEDBACK TO ADDRESS:\n{feedback}" if feedback else ""
     system = """You are the Tutorial Agent in Flex AI. Respond ONLY with valid JSON, no markdown:
 {
   "solutions": [
@@ -152,17 +154,19 @@ async def tutorial_agent(state: dict) -> dict:
     }
   ]
 }"""
-    user = f"Problem: {planner.get('scope', state['problem'])}\nBudget: ${state['budget']}\n\nSolutions:\n{solutions_detail}\n\nWrite descriptions and 2-3 phases per solution."
+    user = f"Problem: {planner.get('scope', state['problem'])}\nBudget: ${state['budget']}\n\nSolutions:\n{solutions_detail}\n\nWrite descriptions and 2-3 phases per solution.{feedback_block}"
     result = await call_gemini(system, user, 1000)
     if not result:
         return {**state, "tutorial": {}, "log": state.get("log",[]) + ["📋 Tutorial Agent: ⚠️ failed to get response"]}
-    return {**state, "tutorial": result, "log": state.get("log",[]) + ["📋 Tutorial Agent: build phases written"]}
+    suffix = " (revised)" if feedback else ""
+    return {**state, "tutorial": result, "log": state.get("log",[]) + [f"📋 Tutorial Agent: build phases written{suffix}"]}
 
 
-async def code_agent(state: dict) -> dict:
+async def code_agent(state: dict, feedback: str = "") -> dict:
     planner = state.get("planner") or {}
     stack_scout = state.get("stack_scout") or {}
     solutions_detail = "\n".join([f"{i+1}. {s.get('title','')} — Stack: {', '.join(s.get('stack',[]))}" for i,s in enumerate(stack_scout.get("solutions",[]))])
+    feedback_block = f"\n\nCRITIC FEEDBACK TO ADDRESS:\n{feedback}" if feedback else ""
     system = """You are the Code Agent in Flex AI. Write REAL runnable code only. Respond ONLY with valid JSON, no markdown:
 {
   "snippets": [
@@ -176,16 +180,18 @@ async def code_agent(state: dict) -> dict:
     }
   ]
 }"""
-    user = f"Problem: {planner.get('scope', state['problem'])}\n\nSolutions:\n{solutions_detail}\n\nWrite a real starter snippet for each."
+    user = f"Problem: {planner.get('scope', state['problem'])}\n\nSolutions:\n{solutions_detail}\n\nWrite a real starter snippet for each.{feedback_block}"
     result = await call_gemini(system, user, 900)
     if not result:
         return {**state, "code_agent": {}, "log": state.get("log",[]) + ["🤖 Code Agent: ⚠️ failed to get response"]}
-    return {**state, "code_agent": result, "log": state.get("log",[]) + ["🤖 Code Agent: starter snippets generated"]}
+    suffix = " (revised)" if feedback else ""
+    return {**state, "code_agent": result, "log": state.get("log",[]) + [f"🤖 Code Agent: starter snippets generated{suffix}"]}
 
 
-async def tools_sourcer_agent(state: dict) -> dict:
+async def tools_sourcer_agent(state: dict, feedback: str = "") -> dict:
     stack_scout = state.get("stack_scout") or {}
     summary = "\n".join([f"{i+1}. {s.get('title','')} — Stack: {', '.join(s.get('stack',[]))}" for i,s in enumerate(stack_scout.get("solutions",[]))])
+    feedback_block = f"\n\nCRITIC FEEDBACK TO ADDRESS:\n{feedback}" if feedback else ""
     system = """You are the Tools Sourcer agent in Flex AI. Real URLs only. Respond ONLY with valid JSON, no markdown:
 {
   "solutions": [
@@ -196,11 +202,77 @@ async def tools_sourcer_agent(state: dict) -> dict:
   ]
 }
 3-4 tools per solution."""
-    user = f"Solutions:\n{summary}\n\nFind real resources for each."
+    user = f"Solutions:\n{summary}\n\nFind real resources for each.{feedback_block}"
     result = await call_gemini(system, user, 700)
     if not result:
         return {**state, "tools_sourcer": {}, "log": state.get("log",[]) + ["📦 Tools Sourcer: ⚠️ failed to get response"]}
-    return {**state, "tools_sourcer": result, "log": state.get("log",[]) + ["📦 Tools Sourcer: resources found"]}
+    suffix = " (revised)" if feedback else ""
+    return {**state, "tools_sourcer": result, "log": state.get("log",[]) + [f"📦 Tools Sourcer: resources found{suffix}"]}
+
+
+async def critic_agent(state: dict) -> dict:
+    """
+    Phase 2: Critic agent.
+    Scores Tutorial, Code, and Tools outputs 1-10.
+    Only retries agents that score below 7.
+    """
+    planner = state.get("planner") or {}
+    tutorial = state.get("tutorial") or {}
+    code_agent_out = state.get("code_agent") or {}
+    tools_sourcer = state.get("tools_sourcer") or {}
+
+    system = """You are the Critic agent in Flex AI. Review agent outputs and score them.
+Respond ONLY with valid JSON, no markdown:
+{
+  "tutorial_score": 8,
+  "tutorial_feedback": "specific actionable feedback, or null if score >= 7",
+  "code_score": 7,
+  "code_feedback": "specific actionable feedback, or null if score >= 7",
+  "tools_score": 6,
+  "tools_feedback": "specific actionable feedback, or null if score >= 7"
+}
+Scoring criteria:
+- Tutorial (1-10): Are descriptions specific to the problem? Are phases realistic with enough steps?
+- Code (1-10): Is the code real and runnable, not pseudocode? Does it actually match the stack?
+- Tools (1-10): Are URLs real and specific (not generic homepages)? Are tools actually relevant?
+Score 7+ = acceptable. Below 7 = provide specific, actionable feedback to fix it."""
+
+    user = f"""Problem: {planner.get('scope', state.get('problem', ''))}
+Budget: ${state.get('budget', 0)}
+
+TUTORIAL OUTPUT:
+{json.dumps(tutorial, indent=2)[:600]}
+
+CODE OUTPUT:
+{json.dumps(code_agent_out, indent=2)[:600]}
+
+TOOLS OUTPUT:
+{json.dumps(tools_sourcer, indent=2)[:600]}
+
+Score each and give feedback for any scoring below 7."""
+
+    result = await call_gemini(system, user, 600)
+
+    if not result:
+        # Critic failed — default all pass so pipeline continues
+        print("[CRITIC] Failed to score — defaulting all to pass")
+        return {**state, "critic": {"tutorial_score": 7, "code_score": 7, "tools_score": 7}, "log": state.get("log", []) + ["🔎 Critic: ⚠️ scoring failed — skipping retry"]}
+
+    t_score = result.get("tutorial_score", 7)
+    c_score = result.get("code_score", 7)
+    ts_score = result.get("tools_score", 7)
+
+    score_summary = f"Tutorial:{t_score}/10 Code:{c_score}/10 Tools:{ts_score}/10"
+    retries_needed = [k for k, v in [("tutorial", t_score), ("code", c_score), ("tools", ts_score)] if v < 7]
+
+    log_msg = f"🔎 Critic: {score_summary}"
+    if retries_needed:
+        log_msg += f" — retrying: {', '.join(retries_needed)}"
+    else:
+        log_msg += " — all passed ✓"
+
+    print(f"[CRITIC] {score_summary} | Retrying: {retries_needed}")
+    return {**state, "critic": result, "log": state.get("log", []) + [log_msg]}
 
 
 async def video_agent(state: dict) -> dict:
