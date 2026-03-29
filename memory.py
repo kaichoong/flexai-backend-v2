@@ -54,9 +54,10 @@ async def save_run(
     """Save a completed project run to Supabase."""
     client = get_client()
     if not client:
+        print("[MEMORY] No client — check SUPABASE_URL and SUPABASE_KEY env vars")
         return False
     try:
-        client.table("flex_runs").insert({
+        response = client.table("flex_runs").insert({
             "fingerprint": fingerprint,
             "problem": problem,
             "picked_title": picked_title,
@@ -67,10 +68,12 @@ async def save_run(
             "problem_type": problem_type,
             "solution_count": solution_count,
         }).execute()
+        print(f"[MEMORY] Insert response: {response}")
         print(f"[MEMORY] Saved run for {fingerprint}: {picked_title}")
         return True
     except Exception as e:
-        print(f"[MEMORY] Save error: {e}")
+        print(f"[MEMORY] Save error type: {type(e).__name__}")
+        print(f"[MEMORY] Save error detail: {str(e)}")
         return False
 
 
