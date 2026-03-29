@@ -156,6 +156,7 @@ async def get_projects(request: ProjectRequest):
             "projects": final_state.get("projects", []),
             "log": final_state.get("log", []),
             "planner": final_state.get("planner", {}),
+            "orchestrator": final_state.get("orchestrator", {}),
         }
 
     except Exception as e:
