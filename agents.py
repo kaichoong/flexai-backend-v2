@@ -280,3 +280,81 @@ async def video_agent(state: dict) -> dict:
     planner = state.get("planner") or {}
     queued = [{"title": s.get("title",""), "type": s.get("type",""), "stack": s.get("stack",[]), "problem_scope": planner.get("scope", state["problem"]), "status": "queued"} for s in stack_scout.get("solutions",[])]
     return {**state, "video_agent": {"queued": queued, "status": "ready"}, "log": state.get("log",[]) + [f"🎬 Video Agent: {len(queued)} video queues ready"]}
+
+
+async def orchestrator_agent(state: dict) -> dict:
+    """
+    Phase 3: Full Orchestrator.
+    Reads the problem and decides:
+    - problem_type (software/hardware/ai/hybrid)
+    - solution_count (1-3)
+    - agent_order (which agents to run and in what sequence)
+    - focus (token/effort allocation per agent)
+    - skip (agents to skip entirely)
+    - rationale (why these decisions)
+    """
+    system = """You are the Orchestrator agent in Flex AI. You read the user's problem and design the optimal agent pipeline.
+Respond ONLY with valid JSON, no markdown:
+{
+  "problem_type": "software | hardware | ai | hybrid",
+  "complexity": "low | medium | high",
+  "solution_count": 2,
+  "focus": {
+    "planner": "medium",
+    "stack_scout": "high",
+    "budget_bot": "medium",
+    "tutorial": "high",
+    "code_agent": "high",
+    "tools_sourcer": "low"
+  },
+  "skip": [],
+  "parallel_batch": ["tutorial", "code_agent", "tools_sourcer"],
+  "rationale": "one sentence explaining the routing decision",
+  "boost_hints": {
+    "stack_scout": "focus on hardware components and microcontrollers",
+    "code_agent": "prioritise C++ and Python for embedded systems",
+    "tutorial": "include wiring diagrams and physical setup steps"
+  }
+}
+
+Rules:
+- solution_count: 1 for very specific problems, 2 for medium, 3 for broad/exploratory
+- skip tools_sourcer if problem is very niche or highly specific
+- skip budget_bot only if user explicitly said cost doesn't matter
+- focus values: "low" | "medium" | "high" | "critical"
+- boost_hints: specific instructions to pass to each agent (empty {} if no hints)
+- parallel_batch: always include tutorial, code_agent, tools_sourcer unless one is skipped"""
+
+    user = f"""Problem: {state['problem']}
+Budget: ${state['budget']}
+
+Analyse this problem and design the optimal agent pipeline."""
+
+    result = await call_gemini(system, user, 700)
+
+    if not result:
+        # Safe default — run everything normally
+        default_plan = {
+            "problem_type": "software",
+            "complexity": "medium",
+            "solution_count": 3,
+            "focus": {"planner": "medium", "stack_scout": "high", "budget_bot": "medium", "tutorial": "high", "code_agent": "high", "tools_sourcer": "medium"},
+            "skip": [],
+            "parallel_batch": ["tutorial", "code_agent", "tools_sourcer"],
+            "rationale": "Default pipeline — orchestrator could not analyse problem",
+            "boost_hints": {}
+        }
+        return {**state, "orchestrator": default_plan, "log": state.get("log", []) + ["🎯 Orchestrator: ⚠️ using default pipeline"]}
+
+    solution_count = result.get("solution_count", 3)
+    problem_type = result.get("problem_type", "software")
+    skipped = result.get("skip", [])
+    rationale = result.get("rationale", "")
+
+    log_msg = f"🎯 Orchestrator: {problem_type} problem → {solution_count} solution(s)"
+    if skipped:
+        log_msg += f" | skipping: {', '.join(skipped)}"
+    log_msg += f" | {rationale}"
+
+    print(f"[ORCHESTRATOR] {log_msg}")
+    return {**state, "orchestrator": result, "log": state.get("log", []) + [log_msg]}
