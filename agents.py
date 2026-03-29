@@ -284,15 +284,24 @@ async def video_agent(state: dict) -> dict:
 
 async def orchestrator_agent(state: dict) -> dict:
     """
-    Phase 3: Full Orchestrator.
-    Reads the problem and decides:
-    - problem_type (software/hardware/ai/hybrid)
-    - solution_count (1-3)
-    - agent_order (which agents to run and in what sequence)
-    - focus (token/effort allocation per agent)
-    - skip (agents to skip entirely)
-    - rationale (why these decisions)
+    Phase 3+4: Full Orchestrator with memory.
+    Reads the problem + user history and designs the optimal agent pipeline.
     """
+    from memory import get_user_history, build_memory_context, get_user_preferences
+
+    # Load user history if fingerprint provided
+    fingerprint = state.get("fingerprint", "")
+    history = []
+    memory_context = ""
+    prefs = {}
+
+    if fingerprint:
+        history = await get_user_history(fingerprint)
+        memory_context = build_memory_context(history)
+        prefs = get_user_preferences(history)
+        if prefs:
+            print(f"[MEMORY] User prefs: {prefs}")
+
     system = """You are the Orchestrator agent in Flex AI. You read the user's problem and design the optimal agent pipeline.
 Respond ONLY with valid JSON, no markdown:
 {
@@ -319,21 +328,22 @@ Respond ONLY with valid JSON, no markdown:
 
 Rules:
 - solution_count: 1 for very specific problems, 2 for medium, 3 for broad/exploratory
+- If user has past history, weight solution_count and difficulty toward their preferences
 - skip tools_sourcer if problem is very niche or highly specific
 - skip budget_bot only if user explicitly said cost doesn't matter
 - focus values: "low" | "medium" | "high" | "critical"
 - boost_hints: specific instructions to pass to each agent (empty {} if no hints)
 - parallel_batch: always include tutorial, code_agent, tools_sourcer unless one is skipped"""
 
+    memory_block = f"\n\n{memory_context}" if memory_context else ""
     user = f"""Problem: {state['problem']}
-Budget: ${state['budget']}
+Budget: ${state['budget']}{memory_block}
 
 Analyse this problem and design the optimal agent pipeline."""
 
     result = await call_gemini(system, user, 700)
 
     if not result:
-        # Safe default — run everything normally
         default_plan = {
             "problem_type": "software",
             "complexity": "medium",
@@ -352,9 +362,11 @@ Analyse this problem and design the optimal agent pipeline."""
     rationale = result.get("rationale", "")
 
     log_msg = f"🎯 Orchestrator: {problem_type} problem → {solution_count} solution(s)"
+    if prefs.get("run_count"):
+        log_msg += f" | returning user ({prefs['run_count']} past runs)"
     if skipped:
         log_msg += f" | skipping: {', '.join(skipped)}"
     log_msg += f" | {rationale}"
 
     print(f"[ORCHESTRATOR] {log_msg}")
-    return {**state, "orchestrator": result, "log": state.get("log", []) + [log_msg]}
+    return {**state, "orchestrator": result, "user_history": history, "log": state.get("log", []) + [log_msg]}
