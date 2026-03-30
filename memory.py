@@ -8,7 +8,7 @@ import httpx
 from collections import Counter
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip().lstrip("= ")
 
 
 def get_headers() -> dict:
