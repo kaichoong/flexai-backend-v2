@@ -304,6 +304,61 @@ async def memory_get(fingerprint: str):
     return {"history": history, "preferences": prefs}
 
 
+@app.post("/api/audio/generate")
+async def generate_audio(request: dict):
+    """
+    Phase 5: ElevenLabs TTS — generate real voiceover audio for a video script.
+    Returns base64-encoded MP3 audio.
+    """
+    import base64
+
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY not configured")
+
+    narration = request.get("narration", "")
+    if not narration:
+        raise HTTPException(status_code=400, detail="narration is required")
+
+    # Use Rachel voice — clear, friendly, professional
+    voice_id = request.get("voice_id", "21m00Tcm4TlvDq8ikWAM")
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+                headers={
+                    "xi-api-key": api_key,
+                    "Content-Type": "application/json",
+                    "Accept": "audio/mpeg",
+                },
+                json={
+                    "text": narration,
+                    "model_id": "eleven_turbo_v2",
+                    "voice_settings": {
+                        "stability": 0.5,
+                        "similarity_boost": 0.75,
+                        "style": 0.3,
+                        "use_speaker_boost": True
+                    }
+                }
+            )
+
+        if response.status_code != 200:
+            print(f"[ELEVENLABS] Error: {response.status_code} {response.text[:200]}")
+            raise HTTPException(status_code=500, detail=f"ElevenLabs error: {response.status_code}")
+
+        audio_b64 = base64.b64encode(response.content).decode("utf-8")
+        print(f"[ELEVENLABS] Generated {len(response.content)} bytes of audio")
+        return {"audio_b64": audio_b64, "format": "mp3"}
+
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="ElevenLabs request timed out")
+    except Exception as e:
+        print(f"[ELEVENLABS] Exception: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/chat")
 async def chat(request: dict):
     from agents import call_gemini_text
