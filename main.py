@@ -7,6 +7,7 @@ so the frontend can show real-time agent progress.
 import os
 import json
 import asyncio
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
