@@ -304,6 +304,19 @@ async def memory_get(fingerprint: str):
     return {"history": history, "preferences": prefs}
 
 
+@app.options("/api/audio/generate")
+async def audio_options():
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
+
+
 @app.post("/api/audio/generate")
 async def generate_audio(request: dict):
     """
@@ -350,7 +363,15 @@ async def generate_audio(request: dict):
 
         audio_b64 = base64.b64encode(response.content).decode("utf-8")
         print(f"[ELEVENLABS] Generated {len(response.content)} bytes of audio")
-        return {"audio_b64": audio_b64, "format": "mp3"}
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            content={"audio_b64": audio_b64, "format": "mp3"},
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+            }
+        )
 
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="ElevenLabs request timed out")
